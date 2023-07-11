@@ -1,20 +1,31 @@
 import { config } from "dotenv";
 import { ThirdwebSDK, SmartContract } from "@thirdweb-dev/sdk";
 import { ethers } from "ethers";
+import fetch from "cross-fetch";
 config();
 
-interface AttestationResponse {
-  status: string;
-  attestation?: string;
-}
+// Private key of the account that will be used to sign transactions
+const privateKey = process.env.PRIVATE_KEY as string;
+// Amount to transfer in USDC
+const amountToTransfer = 0.1;
+// Chain to transfer from and to
+const fromChain = "goerli";
+const toChain = "avalanche-fuji";
 
 const main = async () => {
-  const privateKey = process.env.PRIVATE_KEY as string;
-  const sdkETH = ThirdwebSDK.fromPrivateKey(privateKey, "goerli");
-  const sdkAVAX = ThirdwebSDK.fromPrivateKey(privateKey, "avalanche-fuji");
-
+  const sdkETH = ThirdwebSDK.fromPrivateKey(privateKey, fromChain);
+  const sdkAVAX = ThirdwebSDK.fromPrivateKey(privateKey, toChain);
   const destinationAddress = await sdkAVAX.wallet.getAddress();
-  const amountToTransfer = 0.1;
+
+  console.log(
+    "Transfering",
+    amountToTransfer,
+    "USDC from",
+    fromChain,
+    "to",
+    toChain
+  );
+  console.log("Wallet Address:", destinationAddress);
 
   // Testnet Contract Addresses
   const ETH_TOKEN_MESSENGER_CONTRACT_ADDRESS: string =
@@ -46,22 +57,25 @@ const main = async () => {
   const amount = amountToTransfer * 10 ** 6;
 
   // STEP 1: Approve messenger contract to withdraw from our active eth address
+  console.log(`Approving USDC transfer on ${fromChain}...`);
   const approveMessengerWithdraw = await usdcEthContract.call("approve", [
     ETH_TOKEN_MESSENGER_CONTRACT_ADDRESS,
     amount,
   ]);
-  console.log(approveMessengerWithdraw, "approveMessengerWithdraw data");
+  console.log(
+    "Approved - txHash:",
+    approveMessengerWithdraw.receipt.transactionHash
+  );
 
   // STEP 2: Burn USDC
+  console.log(`Depositing USDC to Token Messenger contract on ${fromChain}...`);
   const burnUSDC = await ethTokenMessengerContract.call("depositForBurn", [
     amount,
     AVAX_DESTINATION_DOMAIN,
     destinationAddressInBytes32,
     USDC_ETH_CONTRACT_ADDRESS,
   ]);
-  console.log(burnUSDC, "burnUSDC data");
-  console.log(burnUSDC.receipt.logs, "burnUSDC logs");
-  // console.log(typeof (burnUSDC.receipt.logs), 'burnUSDC logs')
+  console.log("Deposited - txHash:", burnUSDC.receipt.transactionHash);
 
   // STEP 3: Retrieve message bytes from logs
   const transactionReceipt = burnUSDC.receipt;
@@ -77,28 +91,39 @@ const main = async () => {
   )[0];
   const messageHash = ethers.utils.keccak256(messageBytes);
 
-  console.log(`MessageBytes: ${messageBytes}`);
-  console.log(`MessageHash: ${messageHash}`);
-
   // STEP 4: Fetch attestation signature
+  console.log("Fetching attestation signature...");
   let attestationResponse: AttestationResponse = { status: "pending" };
   while (attestationResponse.status !== "complete") {
     const response = await fetch(
       `https://iris-api-sandbox.circle.com/attestations/${messageHash}`
     );
     attestationResponse = await response.json();
+    console.log("Attestation Status:", attestationResponse.status || "sent");
     await new Promise((r) => setTimeout(r, 2000));
   }
 
   const attestationSignature = attestationResponse.attestation;
-  console.log(`Signature: ${attestationSignature}`);
+  console.log(`Obtained Signature: ${attestationSignature}`);
 
   // STEP 5: Using the message bytes and signature recieve the funds on destination chain and address
+  console.log(`Receiving funds on ${toChain}...`);
   const receiveTx = await avaxMessageTransmitterContract.call(
     "receiveMessage",
     [messageBytes, attestationSignature]
   );
-  console.log("ReceiveTx: ", receiveTx);
+  console.log(
+    "Received funds successfully - txHash:",
+    receiveTx.receipt.transactionHash
+  );
 };
+
+interface AttestationResponse {
+  status: string;
+  attestation?: string;
+}
+
+// suppress warnings for this demo
+console.warn = function () {};
 
 main();
