@@ -13,8 +13,12 @@ const fromChain = "goerli";
 const toChain = "avalanche-fuji";
 
 const main = async () => {
-  const sdkETH = ThirdwebSDK.fromPrivateKey(privateKey, fromChain);
-  const sdkAVAX = ThirdwebSDK.fromPrivateKey(privateKey, toChain);
+  const sdkETH = ThirdwebSDK.fromPrivateKey(privateKey, fromChain, {
+    secretKey: process.env.SECRET_KEY as string,
+  });
+  const sdkAVAX = ThirdwebSDK.fromPrivateKey(privateKey, toChain, {
+    secretKey: process.env.SECRET_KEY as string,
+  });
   const destinationAddress = await sdkAVAX.wallet.getAddress();
 
   console.log(
@@ -124,6 +128,6 @@ interface AttestationResponse {
 }
 
 // suppress warnings for this demo
-console.warn = function () {};
+console.warn = function () { };
 
 main();
