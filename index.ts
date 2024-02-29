@@ -1,69 +1,68 @@
 import { config } from "dotenv";
 import { ThirdwebSDK, SmartContract } from "@thirdweb-dev/sdk";
 import { ethers } from "ethers";
-import fetch from "cross-fetch";
+import { Networks } from "./const/chains";
 config();
 
 // Private key of the account that will be used to sign transactions
 const privateKey = process.env.PRIVATE_KEY as string;
 // Amount to transfer in USDC
 const amountToTransfer = 0.1;
-// Chain to transfer from and to
-const fromChain = "goerli";
-const toChain = "avalanche-fuji";
+// Source chain and destination chain, options are "sepolia", "avalanche-fuji", "arbitrum-sepolia", "optimism-sepolia" and "base-sepolia".
+const sourceChain = "avalanche-fuji";
+const destinationChain = "sepolia";
 
 const main = async () => {
-  const sdkETH = ThirdwebSDK.fromPrivateKey(privateKey, fromChain, {
+  const sourceChainObject = Networks[sourceChain];
+  const destinationChainObject = Networks[destinationChain];
+  const sourceChainSDK = ThirdwebSDK.fromPrivateKey(privateKey, sourceChainObject.network, {
     secretKey: process.env.SECRET_KEY as string,
   });
-  const sdkAVAX = ThirdwebSDK.fromPrivateKey(privateKey, toChain, {
+  const destinationChainSdk = ThirdwebSDK.fromPrivateKey(privateKey, destinationChainObject.network, {
     secretKey: process.env.SECRET_KEY as string,
   });
-  const destinationAddress = await sdkAVAX.wallet.getAddress();
+  const destinationAddress = await destinationChainSdk.wallet.getAddress();
 
   console.log(
     "Transfering",
     amountToTransfer,
     "USDC from",
-    fromChain,
+    sourceChainObject.name,
     "to",
-    toChain
+    destinationChainObject.name
   );
   console.log("Wallet Address:", destinationAddress);
 
   // Testnet Contract Addresses
-  const ETH_TOKEN_MESSENGER_CONTRACT_ADDRESS: string =
-    "0xd0c3da58f55358142b8d3e06c1c30c5c6114efe8";
-  const USDC_ETH_CONTRACT_ADDRESS: string =
-    "0x07865c6e87b9f70255377e024ace6630c1eaa37f";
-  const AVAX_MESSAGE_TRANSMITTER_CONTRACT_ADDRESS: string =
-    "0xa9fb1b3009dcb79e2fe346c16a604b8fa8ae0a79";
+  const TOKEN_MESSENGER_CONTRACT_ADDRESS = sourceChainObject.tokenMessengerContract;
+  const USDC_CONTRACT_ADDRESS = sourceChainObject.usdcContract;
+  const MESSAGE_TRANSMITTER_CONTRACT_ADDRESS = destinationChainObject.messageTransmitterContract;
+  const DESTINATION_DOMAIN = destinationChainObject.domain;
 
   // initialize contracts
-  const ethTokenMessengerContract: SmartContract = await sdkETH.getContract(
-    ETH_TOKEN_MESSENGER_CONTRACT_ADDRESS
+  const ethTokenMessengerContract = await sourceChainSDK.getContract(
+    TOKEN_MESSENGER_CONTRACT_ADDRESS
   );
-  const usdcEthContract: SmartContract = await sdkETH.getContract(
-    USDC_ETH_CONTRACT_ADDRESS
+  const usdcEthContract = await sourceChainSDK.getContract(
+    USDC_CONTRACT_ADDRESS
   );
-  const avaxMessageTransmitterContract: SmartContract =
-    await sdkAVAX.getContract(AVAX_MESSAGE_TRANSMITTER_CONTRACT_ADDRESS);
+  const messageTransmitterContract =
+    await destinationChainSdk.getContract(MESSAGE_TRANSMITTER_CONTRACT_ADDRESS);
+
 
   // AVAX destination address
-  const mintRecipient = destinationAddress;
   const destinationAddressInBytes32 = ethers.utils.defaultAbiCoder.encode(
     ["address"],
-    [mintRecipient]
+    [destinationAddress]
   );
-  const AVAX_DESTINATION_DOMAIN = 1;
 
   // Amount that will be transferred
   const amount = amountToTransfer * 10 ** 6;
 
   // STEP 1: Approve messenger contract to withdraw from our active eth address
-  console.log(`Approving USDC transfer on ${fromChain}...`);
+  console.log(`Approving USDC transfer on ${sourceChainObject.name}...`);
   const approveMessengerWithdraw = await usdcEthContract.call("approve", [
-    ETH_TOKEN_MESSENGER_CONTRACT_ADDRESS,
+    TOKEN_MESSENGER_CONTRACT_ADDRESS,
     amount,
   ]);
   console.log(
@@ -72,12 +71,12 @@ const main = async () => {
   );
 
   // STEP 2: Burn USDC
-  console.log(`Depositing USDC to Token Messenger contract on ${fromChain}...`);
+  console.log(`Depositing USDC to Token Messenger contract on ${sourceChainObject.name}...`);
   const burnUSDC = await ethTokenMessengerContract.call("depositForBurn", [
     amount,
-    AVAX_DESTINATION_DOMAIN,
+    DESTINATION_DOMAIN,
     destinationAddressInBytes32,
-    USDC_ETH_CONTRACT_ADDRESS,
+    USDC_CONTRACT_ADDRESS,
   ]);
   console.log("Deposited - txHash:", burnUSDC.receipt.transactionHash);
 
@@ -111,8 +110,8 @@ const main = async () => {
   console.log(`Obtained Signature: ${attestationSignature}`);
 
   // STEP 5: Using the message bytes and signature recieve the funds on destination chain and address
-  console.log(`Receiving funds on ${toChain}...`);
-  const receiveTx = await avaxMessageTransmitterContract.call(
+  console.log(`Receiving funds on ${destinationChainObject.name}...`);
+  const receiveTx = await messageTransmitterContract.call(
     "receiveMessage",
     [messageBytes, attestationSignature]
   );
