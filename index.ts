@@ -8,7 +8,7 @@ config();
 const privateKey = process.env.PRIVATE_KEY as string;
 // Amount to transfer in USDC
 const amountToTransfer = 0.1;
-// Source chain and destination chain, options are "sepolia", "avalanche-fuji", "arbitrum-sepolia", "optimism-sepolia" and "base-sepolia".
+// Source chain and destination chain, options are "sepolia", "avalanche-fuji", "arbitrum-sepolia", "op-sepolia-testnet" and "base-sepolia-testnet".
 const sourceChain = "avalanche-fuji";
 const destinationChain = "sepolia";
 
